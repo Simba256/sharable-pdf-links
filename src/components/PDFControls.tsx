@@ -11,9 +11,13 @@ interface PDFControlsProps {
   canGoPrevious: boolean
   canGoNext: boolean
   scale: number
+  zoomMode: 'custom' | 'fit-width' | 'fit-page' | 'auto'
   onZoomIn: () => void
   onZoomOut: () => void
   onResetZoom: () => void
+  onFitToWidth: () => void
+  onFitToPage: () => void
+  onActualSize: () => void
 }
 
 export default function PDFControls({
@@ -25,9 +29,13 @@ export default function PDFControls({
   canGoPrevious,
   canGoNext,
   scale,
+  zoomMode,
   onZoomIn,
   onZoomOut,
   onResetZoom,
+  onFitToWidth,
+  onFitToPage,
+  onActualSize,
 }: PDFControlsProps) {
   const [pageInput, setPageInput] = useState('')
 
@@ -38,6 +46,13 @@ export default function PDFControls({
       onGoToPage(page)
       setPageInput('')
     }
+  }
+
+  const getZoomLabel = () => {
+    if (zoomMode === 'fit-width') return 'Fit Width'
+    if (zoomMode === 'fit-page') return 'Fit Page'
+    if (zoomMode === 'auto') return 'Auto'
+    return `${Math.round(scale * 100)}%`
   }
 
   return (
@@ -81,9 +96,28 @@ export default function PDFControls({
             >
               -
             </button>
-            <span className="text-sm text-gray-700 font-medium min-w-[4rem] text-center">
-              {Math.round(scale * 100)}%
-            </span>
+
+            <select
+              value={zoomMode === 'custom' ? 'custom' : zoomMode}
+              onChange={(e) => {
+                const value = e.target.value
+                if (value === 'fit-width') onFitToWidth()
+                else if (value === 'fit-page') onFitToPage()
+                else if (value === 'auto') onResetZoom()
+                else if (value === 'actual') onActualSize()
+              }}
+              className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-md text-sm font-medium transition-colors border-0 cursor-pointer"
+              aria-label="Zoom preset"
+            >
+              <option value="auto">Auto</option>
+              <option value="fit-width">Fit to Width</option>
+              <option value="fit-page">Fit to Page</option>
+              <option value="actual">Actual Size</option>
+              {zoomMode === 'custom' && (
+                <option value="custom">{Math.round(scale * 100)}%</option>
+              )}
+            </select>
+
             <button
               onClick={onZoomIn}
               disabled={scale >= 3.0}
@@ -92,14 +126,6 @@ export default function PDFControls({
               title="Zoom in (+)"
             >
               +
-            </button>
-            <button
-              onClick={onResetZoom}
-              className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-md text-sm font-medium transition-colors"
-              aria-label="Reset zoom"
-              title="Reset zoom (0)"
-            >
-              Reset
             </button>
           </div>
 

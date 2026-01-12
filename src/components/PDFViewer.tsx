@@ -20,6 +20,7 @@ export default function PDFViewer() {
   const [numPages, setNumPages] = useState<number | null>(null)
   const [pageWidth, setPageWidth] = useState<number>(800)
   const [scale, setScale] = useState<number>(1.0)
+  const [zoomMode, setZoomMode] = useState<'custom' | 'fit-width' | 'fit-page' | 'auto'>('auto')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -68,23 +69,35 @@ export default function PDFViewer() {
     }
   }, [currentPage, goToPage])
 
+  // Calculate page width based on zoom mode
+  const calculatePageWidth = useCallback(() => {
+    const containerWidth = containerRef.current?.clientWidth || window.innerWidth
+    const availableWidth = containerWidth - 64 // Account for padding
+
+    if (zoomMode === 'fit-width' || zoomMode === 'auto') {
+      return Math.min(availableWidth, 1200) // Max 1200px for readability
+    } else {
+      // For custom/fit-page, use responsive sizing
+      if (containerWidth < 640) {
+        return containerWidth - 32
+      } else if (containerWidth < 1024) {
+        return Math.min(600, containerWidth - 64)
+      } else {
+        return Math.min(800, containerWidth - 128)
+      }
+    }
+  }, [zoomMode])
+
   // Handle window resize for responsive width
   useEffect(() => {
     const handleResize = () => {
-      const width = window.innerWidth
-      if (width < 640) {
-        setPageWidth(width - 32) // Mobile: full width minus padding
-      } else if (width < 1024) {
-        setPageWidth(Math.min(600, width - 64)) // Tablet
-      } else {
-        setPageWidth(Math.min(800, width - 128)) // Desktop
-      }
+      setPageWidth(calculatePageWidth())
     }
 
     handleResize()
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [])
+  }, [calculatePageWidth])
 
   const onDocumentLoadSuccess = useCallback((pdf: any) => {
     setNumPages(pdf.numPages)
@@ -159,15 +172,38 @@ export default function PDFViewer() {
 
   // Zoom functions
   const zoomIn = () => {
+    setZoomMode('custom')
     setScale(prev => Math.min(prev + 0.2, 3.0))
   }
 
   const zoomOut = () => {
+    setZoomMode('custom')
     setScale(prev => Math.max(prev - 0.2, 0.5))
   }
 
   const resetZoom = () => {
+    setZoomMode('auto')
     setScale(1.0)
+  }
+
+  const setFitToWidth = () => {
+    setZoomMode('fit-width')
+    setScale(1.0)
+    setPageWidth(calculatePageWidth())
+  }
+
+  const setFitToPage = () => {
+    setZoomMode('fit-page')
+    const containerHeight = window.innerHeight - 180 // Account for header/footer
+    const containerWidth = calculatePageWidth()
+    const heightScale = containerHeight / (containerWidth * 1.4) // Assuming A4 ratio
+    setScale(Math.min(heightScale, 1.0))
+  }
+
+  const setActualSize = () => {
+    setZoomMode('custom')
+    setScale(1.0)
+    setPageWidth(calculatePageWidth())
   }
 
   // Intersection Observer to track visible page and load nearby pages
@@ -342,9 +378,13 @@ export default function PDFViewer() {
           canGoPrevious={currentPage > 1}
           canGoNext={currentPage < numPages}
           scale={scale}
+          zoomMode={zoomMode}
           onZoomIn={zoomIn}
           onZoomOut={zoomOut}
           onResetZoom={resetZoom}
+          onFitToWidth={setFitToWidth}
+          onFitToPage={setFitToPage}
+          onActualSize={setActualSize}
         />
       )}
     </div>
