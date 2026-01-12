@@ -10,6 +10,10 @@ interface PDFControlsProps {
   onGoToPage: (page: number) => void
   canGoPrevious: boolean
   canGoNext: boolean
+  scale: number
+  onZoomIn: () => void
+  onZoomOut: () => void
+  onResetZoom: () => void
 }
 
 export default function PDFControls({
@@ -20,6 +24,10 @@ export default function PDFControls({
   onGoToPage,
   canGoPrevious,
   canGoNext,
+  scale,
+  onZoomIn,
+  onZoomOut,
+  onResetZoom,
 }: PDFControlsProps) {
   const [pageInput, setPageInput] = useState('')
 
@@ -59,6 +67,39 @@ export default function PDFControls({
               aria-label="Next page"
             >
               Next
+            </button>
+          </div>
+
+          {/* Zoom controls */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onZoomOut}
+              disabled={scale <= 0.5}
+              className="px-3 py-2 bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed rounded-md text-sm font-medium transition-colors"
+              aria-label="Zoom out"
+              title="Zoom out (-)"
+            >
+              -
+            </button>
+            <span className="text-sm text-gray-700 font-medium min-w-[4rem] text-center">
+              {Math.round(scale * 100)}%
+            </span>
+            <button
+              onClick={onZoomIn}
+              disabled={scale >= 3.0}
+              className="px-3 py-2 bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed rounded-md text-sm font-medium transition-colors"
+              aria-label="Zoom in"
+              title="Zoom in (+)"
+            >
+              +
+            </button>
+            <button
+              onClick={onResetZoom}
+              className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-md text-sm font-medium transition-colors"
+              aria-label="Reset zoom"
+              title="Reset zoom (0)"
+            >
+              Reset
             </button>
           </div>
 

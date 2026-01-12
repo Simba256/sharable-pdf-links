@@ -3,6 +3,8 @@
 import { Suspense } from 'react'
 import PDFViewer from '@/components/PDFViewer'
 
+export const dynamic = 'force-dynamic'
+
 export default function Home() {
   return (
     <main className="min-h-screen">

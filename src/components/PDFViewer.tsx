@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css'
 import 'react-pdf/dist/esm/Page/TextLayer.css'
@@ -18,11 +18,13 @@ export default function PDFViewer() {
   const searchParams = useSearchParams()
   const [numPages, setNumPages] = useState<number | null>(null)
   const [pageWidth, setPageWidth] = useState<number>(800)
+  const [scale, setScale] = useState<number>(1.0)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [matchCount, setMatchCount] = useState(0)
+  const pdfDocumentRef = useRef<any>(null)
 
   const {
     currentPage,
@@ -51,8 +53,9 @@ export default function PDFViewer() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
-    setNumPages(numPages)
+  function onDocumentLoadSuccess(pdf: any) {
+    setNumPages(pdf.numPages)
+    pdfDocumentRef.current = pdf
     setIsLoading(false)
     setError(null)
   }
@@ -66,22 +69,53 @@ export default function PDFViewer() {
   const handleSearch = useCallback(async (query: string) => {
     setSearchQuery(query)
 
-    if (!query) {
+    if (!query || !pdfDocumentRef.current) {
       setMatchCount(0)
       return
     }
 
     setIsSearching(true)
 
-    // Simulate search - in a real implementation, you'd search through PDF text
-    // For now, we'll just show a basic implementation
-    setTimeout(() => {
-      // This is a placeholder - actual implementation would use PDF.js getTextContent
-      const mockMatches = Math.floor(Math.random() * 20)
-      setMatchCount(mockMatches)
+    try {
+      let totalMatches = 0
+      const searchLower = query.toLowerCase()
+      const pdf = pdfDocumentRef.current
+
+      // Search through all pages
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i)
+        const textContent = await page.getTextContent()
+        const pageText = textContent.items
+          .map((item: any) => item.str)
+          .join(' ')
+          .toLowerCase()
+
+        // Count occurrences in this page
+        const matches = pageText.split(searchLower).length - 1
+        totalMatches += matches
+      }
+
+      setMatchCount(totalMatches)
       setIsSearching(false)
-    }, 500)
+    } catch (error) {
+      console.error('Search error:', error)
+      setMatchCount(0)
+      setIsSearching(false)
+    }
   }, [])
+
+  // Zoom functions
+  const zoomIn = () => {
+    setScale(prev => Math.min(prev + 0.2, 3.0))
+  }
+
+  const zoomOut = () => {
+    setScale(prev => Math.max(prev - 0.2, 0.5))
+  }
+
+  const resetZoom = () => {
+    setScale(1.0)
+  }
 
   // Keyboard navigation
   useEffect(() => {
@@ -90,6 +124,12 @@ export default function PDFViewer() {
         previousPage()
       } else if (e.key === 'ArrowRight' && canGoNext) {
         nextPage()
+      } else if (e.key === '+' || e.key === '=') {
+        zoomIn()
+      } else if (e.key === '-' || e.key === '_') {
+        zoomOut()
+      } else if (e.key === '0') {
+        resetZoom()
       }
     }
 
@@ -147,6 +187,7 @@ export default function PDFViewer() {
             <Page
               pageNumber={currentPage}
               width={pageWidth}
+              scale={scale}
               loading={
                 <div className="flex items-center justify-center py-12">
                   <div className="text-gray-600">Loading page {currentPage}...</div>
@@ -169,6 +210,10 @@ export default function PDFViewer() {
           onGoToPage={goToPage}
           canGoPrevious={canGoPrevious}
           canGoNext={canGoNext}
+          scale={scale}
+          onZoomIn={zoomIn}
+          onZoomOut={zoomOut}
+          onResetZoom={resetZoom}
         />
       )}
     </div>
