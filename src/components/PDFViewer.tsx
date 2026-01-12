@@ -26,6 +26,8 @@ export default function PDFViewer() {
   const [isSearching, setIsSearching] = useState(false)
   const [matchCount, setMatchCount] = useState(0)
   const [currentPage, setCurrentPage] = useState<number>(1)
+  const [visiblePages, setVisiblePages] = useState<Set<number>>(new Set([1]))
+  const [pageHeight, setPageHeight] = useState<number>(0)
   const pdfDocumentRef = useRef<any>(null)
   const pageRefs = useRef<{ [key: number]: HTMLDivElement | null }>({})
   const isScrollingToPage = useRef(false)
@@ -90,14 +92,26 @@ export default function PDFViewer() {
     setIsLoading(false)
     setError(null)
 
-    // Scroll to initial page from URL
+    // Calculate approximate page height for placeholders
+    const estimatedPageHeight = pageWidth * 1.4 // Typical A4 ratio
+    setPageHeight(estimatedPageHeight)
+
+    // Load initial pages
     const initialPage = parseInt(searchParams.get('page') || '1', 10)
+    const pagesToLoad = new Set<number>()
+    const buffer = 2
+    for (let i = Math.max(1, initialPage - buffer); i <= Math.min(pdf.numPages, initialPage + buffer); i++) {
+      pagesToLoad.add(i)
+    }
+    setVisiblePages(pagesToLoad)
+
+    // Scroll to initial page from URL
     if (initialPage > 1 && initialPage <= pdf.numPages) {
       setTimeout(() => {
         scrollToPage(initialPage)
       }, 500)
     }
-  }, [searchParams, scrollToPage])
+  }, [searchParams, scrollToPage, pageWidth])
 
   function onDocumentLoadError(error: Error) {
     console.error('Error loading PDF:', error)
@@ -156,7 +170,7 @@ export default function PDFViewer() {
     setScale(1.0)
   }
 
-  // Intersection Observer to track visible page
+  // Intersection Observer to track visible page and load nearby pages
   useEffect(() => {
     if (!numPages) return
 
@@ -169,10 +183,19 @@ export default function PDFViewer() {
             const pageNum = parseInt(entry.target.getAttribute('data-page-number') || '1', 10)
             if (pageNum !== currentPage) {
               setCurrentPage(pageNum)
+
               // Update URL without scrolling
               const params = new URLSearchParams(searchParams.toString())
               params.set('page', pageNum.toString())
               router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+
+              // Load pages in buffer range
+              const buffer = 2
+              const pagesToLoad = new Set<number>()
+              for (let i = Math.max(1, pageNum - buffer); i <= Math.min(numPages, pageNum + buffer); i++) {
+                pagesToLoad.add(i)
+              }
+              setVisiblePages(pagesToLoad)
             }
           }
         })
@@ -259,29 +282,51 @@ export default function PDFViewer() {
             }
             className="flex flex-col items-center gap-4"
           >
-            {numPages && Array.from(new Array(numPages), (_, index) => (
-              <div
-                key={`page_${index + 1}`}
-                ref={(el) => {
-                  pageRefs.current[index + 1] = el
-                }}
-                data-page-number={index + 1}
-                className="shadow-lg"
-              >
-                <Page
-                  pageNumber={index + 1}
-                  width={pageWidth}
-                  scale={scale}
-                  loading={
-                    <div className="flex items-center justify-center py-12 bg-gray-100" style={{ width: pageWidth, height: pageWidth * 1.4 }}>
-                      <div className="text-gray-600">Loading page {index + 1}...</div>
+            {numPages && Array.from(new Array(numPages), (_, index) => {
+              const pageNum = index + 1
+              const shouldRender = visiblePages.has(pageNum)
+
+              return (
+                <div
+                  key={`page_${pageNum}`}
+                  ref={(el) => {
+                    pageRefs.current[pageNum] = el
+                  }}
+                  data-page-number={pageNum}
+                  className="shadow-lg"
+                  style={{
+                    minHeight: shouldRender ? 'auto' : `${pageHeight * scale}px`,
+                  }}
+                >
+                  {shouldRender ? (
+                    <Page
+                      pageNumber={pageNum}
+                      width={pageWidth}
+                      scale={scale}
+                      loading={
+                        <div className="flex items-center justify-center bg-gray-100" style={{ width: pageWidth * scale, height: pageHeight * scale }}>
+                          <div className="text-gray-600">Loading page {pageNum}...</div>
+                        </div>
+                      }
+                      renderTextLayer={true}
+                      renderAnnotationLayer={true}
+                      onLoadSuccess={(page) => {
+                        // Update actual page height
+                        const actualHeight = page.height * (pageWidth / page.width)
+                        setPageHeight(actualHeight)
+                      }}
+                    />
+                  ) : (
+                    <div
+                      className="flex items-center justify-center bg-gray-50 border border-gray-200"
+                      style={{ width: pageWidth * scale, height: pageHeight * scale }}
+                    >
+                      <div className="text-gray-400 text-sm">Page {pageNum}</div>
                     </div>
-                  }
-                  renderTextLayer={true}
-                  renderAnnotationLayer={true}
-                />
-              </div>
-            ))}
+                  )}
+                </div>
+              )
+            })}
           </Document>
         </div>
       </div>
