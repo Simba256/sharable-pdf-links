@@ -48,6 +48,8 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
   const isInitialLoad = useRef(true)
   const containerRef = useRef<HTMLDivElement>(null)
   const updateTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const scrollPositionRef = useRef<number>(0)
+  const isLoadingPages = useRef(false)
 
   // Scroll to specific page
   const scrollToPage = useCallback((pageNum: number) => {
@@ -65,6 +67,9 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
   // Navigation functions
   const goToPage = useCallback((pageNum: number) => {
     if (numPages && pageNum >= 1 && pageNum <= numPages) {
+      // Mark that we're loading pages
+      isLoadingPages.current = true
+
       // Immediately load pages around the target (accumulate, don't replace)
       const buffer = 2
       setRenderedPages(prev => {
@@ -76,8 +81,14 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
       })
       setCurrentPage(pageNum)
 
-      // Scroll to page
-      scrollToPage(pageNum)
+      // Wait a bit for pages to start rendering, then scroll
+      setTimeout(() => {
+        scrollToPage(pageNum)
+        // Allow observer to resume after scrolling completes
+        setTimeout(() => {
+          isLoadingPages.current = false
+        }, 2000)
+      }, 100)
 
       // Update URL
       router.push(`/${pdfName}/${pageNum}`, { scroll: false })
@@ -238,14 +249,27 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
     setPageWidth(calculatePageWidth())
   }
 
+  // Preserve scroll position when new pages load
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const preserveScroll = () => {
+      scrollPositionRef.current = container.scrollTop
+    }
+
+    container.addEventListener('scroll', preserveScroll)
+    return () => container.removeEventListener('scroll', preserveScroll)
+  }, [])
+
   // Intersection Observer to track visible page and load nearby pages
   useEffect(() => {
     if (!numPages) return
 
     const observer = new IntersectionObserver(
       (entries) => {
-        // Don't update during initial load or programmatic scrolling
-        if (isScrollingToPage.current || isInitialLoad.current) return
+        // Don't update during initial load, programmatic scrolling, or while loading pages
+        if (isScrollingToPage.current || isInitialLoad.current || isLoadingPages.current) return
 
         // Find the most visible page
         let mostVisiblePage = currentPage
@@ -263,13 +287,32 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
 
             // Load pages in buffer range around ANY visible page (accumulate, never remove)
             const buffer = 3
-            setRenderedPages(prev => {
-              const newPages = new Set(prev)
-              for (let i = Math.max(1, pageNum - buffer); i <= Math.min(numPages, pageNum + buffer); i++) {
-                newPages.add(i)
+            const pagesToAdd: number[] = []
+            for (let i = Math.max(1, pageNum - buffer); i <= Math.min(numPages, pageNum + buffer); i++) {
+              if (!renderedPages.has(i)) {
+                pagesToAdd.push(i)
               }
-              return newPages
-            })
+            }
+
+            // Only update if there are new pages to add
+            if (pagesToAdd.length > 0) {
+              // Save scroll position before adding pages
+              const container = containerRef.current
+              const savedScroll = container?.scrollTop || 0
+
+              setRenderedPages(prev => {
+                const newPages = new Set(prev)
+                pagesToAdd.forEach(p => newPages.add(p))
+                return newPages
+              })
+
+              // Restore scroll position after a brief delay
+              requestAnimationFrame(() => {
+                if (container) {
+                  container.scrollTop = savedScroll
+                }
+              })
+            }
           }
         })
 
@@ -288,8 +331,8 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
       },
       {
         root: null,
-        rootMargin: '50px 0px 50px 0px', // Reduced from 100px to be less aggressive
-        threshold: [0, 0.5, 1], // Simplified thresholds
+        rootMargin: '50px 0px 50px 0px',
+        threshold: [0, 0.5, 1],
       }
     )
 
@@ -304,7 +347,7 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
         clearTimeout(updateTimerRef.current)
       }
     }
-  }, [numPages, currentPage, router, pdfName])
+  }, [numPages, currentPage, router, pdfName, renderedPages])
 
   // Keyboard navigation
   useEffect(() => {
@@ -384,7 +427,7 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
                     pageRefs.current[pageNum] = el
                   }}
                   data-page-number={pageNum}
-                  className="shadow-lg"
+                  className="shadow-lg pdf-page-wrapper"
                   style={{
                     minHeight: shouldRender ? 'auto' : `${pageHeight * scale}px`,
                   }}

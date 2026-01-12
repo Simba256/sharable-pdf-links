@@ -17,6 +17,10 @@ body {
   overflow-anchor: none; /* Prevent scroll anchoring in PDF container */
 }
 
+.pdf-page-wrapper {
+  contain: layout style; /* Isolate layout to prevent shifts */
+}
+
 .react-pdf__Page {
   margin: 0 auto;
 }
