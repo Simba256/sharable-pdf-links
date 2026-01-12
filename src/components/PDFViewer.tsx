@@ -107,17 +107,22 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
     } catch (err) {
       console.error('Error caching page dimensions:', err)
     }
+  }, [pageWidth])
 
-    // Scroll to initial page
-    if (initialPage > 1 && initialPage <= pdf.numPages) {
-      setTimeout(() => {
+  // Scroll to initial page once virtualizer is ready
+  useEffect(() => {
+    if (numPages && pageHeights.size > 0 && initialPage > 1 && initialPage <= numPages) {
+      // Wait for virtualizer to measure and layout items
+      const timeoutId = setTimeout(() => {
         virtualizer.scrollToIndex(initialPage - 1, {
           align: 'start',
-          behavior: 'smooth',
+          behavior: 'auto',
         })
-      }, 300)
+      }, 100)
+
+      return () => clearTimeout(timeoutId)
     }
-  }, [initialPage, pageWidth, virtualizer])
+  }, [numPages, pageHeights.size, initialPage, virtualizer])
 
   function onDocumentLoadError(error: Error) {
     console.error('Error loading PDF:', error)
