@@ -4,8 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css'
 import 'react-pdf/dist/esm/Page/TextLayer.css'
-import { useSearchParams } from 'next/navigation'
-import { usePDFNavigation } from '@/hooks/usePDFNavigation'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import PDFControls from './PDFControls'
 import SearchBar from './SearchBar'
 
@@ -16,6 +15,8 @@ const PDF_PATH = '/UG_Prospectus_2021.pdf'
 
 export default function PDFViewer() {
   const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
   const [numPages, setNumPages] = useState<number | null>(null)
   const [pageWidth, setPageWidth] = useState<number>(800)
   const [scale, setScale] = useState<number>(1.0)
@@ -24,16 +25,46 @@ export default function PDFViewer() {
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [matchCount, setMatchCount] = useState(0)
+  const [currentPage, setCurrentPage] = useState<number>(1)
   const pdfDocumentRef = useRef<any>(null)
+  const pageRefs = useRef<{ [key: number]: HTMLDivElement | null }>({})
+  const isScrollingToPage = useRef(false)
+  const containerRef = useRef<HTMLDivElement>(null)
 
-  const {
-    currentPage,
-    nextPage,
-    previousPage,
-    goToPage,
-    canGoNext,
-    canGoPrevious,
-  } = usePDFNavigation(numPages)
+  // Scroll to specific page
+  const scrollToPage = useCallback((pageNum: number) => {
+    const pageElement = pageRefs.current[pageNum]
+    if (pageElement) {
+      isScrollingToPage.current = true
+      pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      setTimeout(() => {
+        isScrollingToPage.current = false
+      }, 1000)
+    }
+  }, [])
+
+  // Navigation functions
+  const goToPage = useCallback((pageNum: number) => {
+    if (numPages && pageNum >= 1 && pageNum <= numPages) {
+      scrollToPage(pageNum)
+      // Update URL
+      const params = new URLSearchParams(searchParams.toString())
+      params.set('page', pageNum.toString())
+      router.push(`${pathname}?${params.toString()}`, { scroll: false })
+    }
+  }, [numPages, scrollToPage, searchParams, router, pathname])
+
+  const nextPage = useCallback(() => {
+    if (numPages && currentPage < numPages) {
+      goToPage(currentPage + 1)
+    }
+  }, [currentPage, numPages, goToPage])
+
+  const previousPage = useCallback(() => {
+    if (currentPage > 1) {
+      goToPage(currentPage - 1)
+    }
+  }, [currentPage, goToPage])
 
   // Handle window resize for responsive width
   useEffect(() => {
@@ -53,12 +84,20 @@ export default function PDFViewer() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  function onDocumentLoadSuccess(pdf: any) {
+  const onDocumentLoadSuccess = useCallback((pdf: any) => {
     setNumPages(pdf.numPages)
     pdfDocumentRef.current = pdf
     setIsLoading(false)
     setError(null)
-  }
+
+    // Scroll to initial page from URL
+    const initialPage = parseInt(searchParams.get('page') || '1', 10)
+    if (initialPage > 1 && initialPage <= pdf.numPages) {
+      setTimeout(() => {
+        scrollToPage(initialPage)
+      }, 500)
+    }
+  }, [searchParams, scrollToPage])
 
   function onDocumentLoadError(error: Error) {
     console.error('Error loading PDF:', error)
@@ -117,12 +156,48 @@ export default function PDFViewer() {
     setScale(1.0)
   }
 
+  // Intersection Observer to track visible page
+  useEffect(() => {
+    if (!numPages) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (isScrollingToPage.current) return
+
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
+            const pageNum = parseInt(entry.target.getAttribute('data-page-number') || '1', 10)
+            if (pageNum !== currentPage) {
+              setCurrentPage(pageNum)
+              // Update URL without scrolling
+              const params = new URLSearchParams(searchParams.toString())
+              params.set('page', pageNum.toString())
+              router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+            }
+          }
+        })
+      },
+      {
+        root: null,
+        rootMargin: '-20% 0px -20% 0px',
+        threshold: [0, 0.5, 1],
+      }
+    )
+
+    // Observe all page elements
+    Object.values(pageRefs.current).forEach((ref) => {
+      if (ref) observer.observe(ref)
+    })
+
+    return () => observer.disconnect()
+  }, [numPages, currentPage, searchParams, router, pathname])
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft' && canGoPrevious) {
+      if (e.key === 'ArrowLeft' && currentPage > 1) {
         previousPage()
-      } else if (e.key === 'ArrowRight' && canGoNext) {
+      } else if (e.key === 'ArrowRight' && numPages && currentPage < numPages) {
         nextPage()
       } else if (e.key === '+' || e.key === '=') {
         zoomIn()
@@ -135,7 +210,7 @@ export default function PDFViewer() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [canGoPrevious, canGoNext, previousPage, nextPage])
+  }, [currentPage, numPages, previousPage, nextPage])
 
   if (error) {
     return (
@@ -165,7 +240,7 @@ export default function PDFViewer() {
       />
 
       {/* PDF Document */}
-      <div className="flex-1 overflow-auto pb-20 pt-6">
+      <div ref={containerRef} className="flex-1 overflow-auto pb-20 pt-6">
         <div className="max-w-7xl mx-auto px-4">
           {isLoading && (
             <div className="flex items-center justify-center py-12">
@@ -182,20 +257,31 @@ export default function PDFViewer() {
                 <div className="text-gray-600">Loading document...</div>
               </div>
             }
-            className="flex justify-center"
+            className="flex flex-col items-center gap-4"
           >
-            <Page
-              pageNumber={currentPage}
-              width={pageWidth}
-              scale={scale}
-              loading={
-                <div className="flex items-center justify-center py-12">
-                  <div className="text-gray-600">Loading page {currentPage}...</div>
-                </div>
-              }
-              renderTextLayer={true}
-              renderAnnotationLayer={true}
-            />
+            {numPages && Array.from(new Array(numPages), (_, index) => (
+              <div
+                key={`page_${index + 1}`}
+                ref={(el) => {
+                  pageRefs.current[index + 1] = el
+                }}
+                data-page-number={index + 1}
+                className="shadow-lg"
+              >
+                <Page
+                  pageNumber={index + 1}
+                  width={pageWidth}
+                  scale={scale}
+                  loading={
+                    <div className="flex items-center justify-center py-12 bg-gray-100" style={{ width: pageWidth, height: pageWidth * 1.4 }}>
+                      <div className="text-gray-600">Loading page {index + 1}...</div>
+                    </div>
+                  }
+                  renderTextLayer={true}
+                  renderAnnotationLayer={true}
+                />
+              </div>
+            ))}
           </Document>
         </div>
       </div>
@@ -208,8 +294,8 @@ export default function PDFViewer() {
           onPreviousPage={previousPage}
           onNextPage={nextPage}
           onGoToPage={goToPage}
-          canGoPrevious={canGoPrevious}
-          canGoNext={canGoNext}
+          canGoPrevious={currentPage > 1}
+          canGoNext={currentPage < numPages}
           scale={scale}
           onZoomIn={zoomIn}
           onZoomOut={zoomOut}
