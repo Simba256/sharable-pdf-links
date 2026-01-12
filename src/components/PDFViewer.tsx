@@ -4,19 +4,32 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css'
 import 'react-pdf/dist/esm/Page/TextLayer.css'
-import { useSearchParams, useRouter, usePathname } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import PDFControls from './PDFControls'
 import SearchBar from './SearchBar'
+import { getPdfConfig } from '@/config/pdfs'
 
 // Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
 
-const PDF_PATH = '/UG_Prospectus_2021.pdf'
+interface PDFViewerProps {
+  pdfName: string
+  initialPage: number
+}
 
-export default function PDFViewer() {
-  const searchParams = useSearchParams()
+export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
   const router = useRouter()
-  const pathname = usePathname()
+  const pdfConfig = getPdfConfig(pdfName)
+
+  if (!pdfConfig) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-red-600">PDF not found</div>
+      </div>
+    )
+  }
+
+  const PDF_PATH = pdfConfig.file
   const [numPages, setNumPages] = useState<number | null>(null)
   const [pageWidth, setPageWidth] = useState<number>(800)
   const [scale, setScale] = useState<number>(1.0)
@@ -26,8 +39,8 @@ export default function PDFViewer() {
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [matchCount, setMatchCount] = useState(0)
-  const [currentPage, setCurrentPage] = useState<number>(1)
-  const [visiblePages, setVisiblePages] = useState<Set<number>>(new Set([1]))
+  const [currentPage, setCurrentPage] = useState<number>(initialPage)
+  const [visiblePages, setVisiblePages] = useState<Set<number>>(new Set([initialPage]))
   const [pageHeight, setPageHeight] = useState<number>(0)
   const pdfDocumentRef = useRef<any>(null)
   const pageRefs = useRef<{ [key: number]: HTMLDivElement | null }>({})
@@ -51,11 +64,9 @@ export default function PDFViewer() {
     if (numPages && pageNum >= 1 && pageNum <= numPages) {
       scrollToPage(pageNum)
       // Update URL
-      const params = new URLSearchParams(searchParams.toString())
-      params.set('page', pageNum.toString())
-      router.push(`${pathname}?${params.toString()}`, { scroll: false })
+      router.push(`/${pdfName}/${pageNum}`, { scroll: false })
     }
-  }, [numPages, scrollToPage, searchParams, router, pathname])
+  }, [numPages, scrollToPage, router, pdfName])
 
   const nextPage = useCallback(() => {
     if (numPages && currentPage < numPages) {
@@ -110,7 +121,6 @@ export default function PDFViewer() {
     setPageHeight(estimatedPageHeight)
 
     // Load initial pages
-    const initialPage = parseInt(searchParams.get('page') || '1', 10)
     const pagesToLoad = new Set<number>()
     const buffer = 2
     for (let i = Math.max(1, initialPage - buffer); i <= Math.min(pdf.numPages, initialPage + buffer); i++) {
@@ -124,7 +134,7 @@ export default function PDFViewer() {
         scrollToPage(initialPage)
       }, 500)
     }
-  }, [searchParams, scrollToPage, pageWidth])
+  }, [initialPage, scrollToPage, pageWidth])
 
   function onDocumentLoadError(error: Error) {
     console.error('Error loading PDF:', error)
@@ -221,9 +231,7 @@ export default function PDFViewer() {
               setCurrentPage(pageNum)
 
               // Update URL without scrolling
-              const params = new URLSearchParams(searchParams.toString())
-              params.set('page', pageNum.toString())
-              router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+              router.replace(`/${pdfName}/${pageNum}`, { scroll: false })
 
               // Load pages in buffer range
               const buffer = 2
@@ -249,7 +257,7 @@ export default function PDFViewer() {
     })
 
     return () => observer.disconnect()
-  }, [numPages, currentPage, searchParams, router, pathname])
+  }, [numPages, currentPage, router, pdfName])
 
   // Keyboard navigation
   useEffect(() => {
@@ -287,7 +295,7 @@ export default function PDFViewer() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4">
-          <h1 className="text-xl font-semibold text-gray-900">PDF Viewer</h1>
+          <h1 className="text-xl font-semibold text-gray-900">{pdfConfig.title}</h1>
         </div>
       </header>
 
