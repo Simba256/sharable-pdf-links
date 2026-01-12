@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense } from 'react'
+import { Suspense, use } from 'react'
 import PDFViewer from '@/components/PDFViewer'
 import { redirect } from 'next/navigation'
 import { isValidPdfName } from '@/config/pdfs'
@@ -8,14 +8,14 @@ import { isValidPdfName } from '@/config/pdfs'
 export const dynamic = 'force-dynamic'
 
 interface PageProps {
-  params: {
+  params: Promise<{
     pdfName: string
     page?: string[]
-  }
+  }>
 }
 
 export default function PDFPage({ params }: PageProps) {
-  const { pdfName, page } = params
+  const { pdfName, page } = use(params)
   const pageNumber = page && page[0] ? parseInt(page[0], 10) : 1
 
   // Validate PDF name
