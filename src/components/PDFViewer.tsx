@@ -40,7 +40,7 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
   const [isSearching, setIsSearching] = useState(false)
   const [matchCount, setMatchCount] = useState(0)
   const [currentPage, setCurrentPage] = useState<number>(initialPage)
-  const [visiblePages, setVisiblePages] = useState<Set<number>>(new Set([initialPage]))
+  const [renderedPages, setRenderedPages] = useState<Set<number>>(new Set([initialPage]))
   const [pageHeight, setPageHeight] = useState<number>(0)
   const pdfDocumentRef = useRef<any>(null)
   const pageRefs = useRef<{ [key: number]: HTMLDivElement | null }>({})
@@ -65,13 +65,15 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
   // Navigation functions
   const goToPage = useCallback((pageNum: number) => {
     if (numPages && pageNum >= 1 && pageNum <= numPages) {
-      // Immediately load pages around the target
+      // Immediately load pages around the target (accumulate, don't replace)
       const buffer = 2
-      const pagesToLoad = new Set<number>()
-      for (let i = Math.max(1, pageNum - buffer); i <= Math.min(numPages, pageNum + buffer); i++) {
-        pagesToLoad.add(i)
-      }
-      setVisiblePages(pagesToLoad)
+      setRenderedPages(prev => {
+        const newPages = new Set(prev)
+        for (let i = Math.max(1, pageNum - buffer); i <= Math.min(numPages, pageNum + buffer); i++) {
+          newPages.add(i)
+        }
+        return newPages
+      })
       setCurrentPage(pageNum)
 
       // Scroll to page
@@ -140,7 +142,7 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
     for (let i = Math.max(1, initialPage - buffer); i <= Math.min(pdf.numPages, initialPage + buffer); i++) {
       pagesToLoad.add(i)
     }
-    setVisiblePages(pagesToLoad)
+    setRenderedPages(pagesToLoad)
 
     // Scroll to initial page from URL
     if (initialPage > 1 && initialPage <= pdf.numPages) {
@@ -259,9 +261,9 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
               mostVisiblePage = pageNum
             }
 
-            // Load pages in buffer range around ANY visible page (immediate, no debounce)
+            // Load pages in buffer range around ANY visible page (accumulate, never remove)
             const buffer = 3
-            setVisiblePages(prev => {
+            setRenderedPages(prev => {
               const newPages = new Set(prev)
               for (let i = Math.max(1, pageNum - buffer); i <= Math.min(numPages, pageNum + buffer); i++) {
                 newPages.add(i)
@@ -373,7 +375,7 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
           >
             {numPages && Array.from(new Array(numPages), (_, index) => {
               const pageNum = index + 1
-              const shouldRender = visiblePages.has(pageNum)
+              const shouldRender = renderedPages.has(pageNum)
 
               return (
                 <div
