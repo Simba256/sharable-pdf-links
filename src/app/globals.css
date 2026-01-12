@@ -10,6 +10,11 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-anchor: none; /* Prevent scroll anchoring */
+}
+
+.pdf-container {
+  overflow-anchor: none; /* Prevent scroll anchoring in PDF container */
 }
 
 .react-pdf__Page {

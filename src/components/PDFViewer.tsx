@@ -47,6 +47,7 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
   const isScrollingToPage = useRef(false)
   const isInitialLoad = useRef(true)
   const containerRef = useRef<HTMLDivElement>(null)
+  const updateTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // Scroll to specific page
   const scrollToPage = useCallback((pageNum: number) => {
@@ -244,11 +245,21 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
         // Don't update during initial load or programmatic scrolling
         if (isScrollingToPage.current || isInitialLoad.current) return
 
+        // Find the most visible page
+        let mostVisiblePage = currentPage
+        let maxRatio = 0
+
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             const pageNum = parseInt(entry.target.getAttribute('data-page-number') || '1', 10)
 
-            // Load pages in buffer range around ANY visible page
+            // Track which page is most visible
+            if (entry.intersectionRatio > maxRatio) {
+              maxRatio = entry.intersectionRatio
+              mostVisiblePage = pageNum
+            }
+
+            // Load pages in buffer range around ANY visible page (immediate, no debounce)
             const buffer = 3
             setVisiblePages(prev => {
               const newPages = new Set(prev)
@@ -257,20 +268,26 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
               }
               return newPages
             })
-
-            // Update current page if this is the main visible page
-            if (entry.intersectionRatio > 0.5 && pageNum !== currentPage) {
-              setCurrentPage(pageNum)
-              // Update URL without scrolling
-              router.replace(`/${pdfName}/${pageNum}`, { scroll: false })
-            }
           }
         })
+
+        // Debounce current page and URL updates to prevent rapid changes
+        if (maxRatio > 0.5 && mostVisiblePage !== currentPage) {
+          if (updateTimerRef.current) {
+            clearTimeout(updateTimerRef.current)
+          }
+
+          updateTimerRef.current = setTimeout(() => {
+            setCurrentPage(mostVisiblePage)
+            // Update URL without scrolling
+            router.replace(`/${pdfName}/${mostVisiblePage}`, { scroll: false })
+          }, 150) // 150ms debounce
+        }
       },
       {
         root: null,
-        rootMargin: '100px 0px 100px 0px', // Load pages before they're visible
-        threshold: [0, 0.25, 0.5, 0.75, 1],
+        rootMargin: '50px 0px 50px 0px', // Reduced from 100px to be less aggressive
+        threshold: [0, 0.5, 1], // Simplified thresholds
       }
     )
 
@@ -279,7 +296,12 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
       if (ref) observer.observe(ref)
     })
 
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      if (updateTimerRef.current) {
+        clearTimeout(updateTimerRef.current)
+      }
+    }
   }, [numPages, currentPage, router, pdfName])
 
   // Keyboard navigation
@@ -330,7 +352,7 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
       />
 
       {/* PDF Document */}
-      <div ref={containerRef} className="flex-1 overflow-auto pb-20 pt-6">
+      <div ref={containerRef} className="flex-1 overflow-auto pb-20 pt-6 pdf-container">
         <div className="max-w-7xl mx-auto px-4">
           {isLoading && (
             <div className="flex items-center justify-center py-12">
