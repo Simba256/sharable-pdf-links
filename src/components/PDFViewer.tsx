@@ -45,6 +45,7 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
   const pdfDocumentRef = useRef<any>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const isNavigating = useRef(false)
+  const hasScrolledToInitialPage = useRef(false)
 
   // Calculate page width based on zoom mode
   const calculatePageWidth = useCallback(() => {
@@ -111,27 +112,41 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
 
   // Scroll to initial page once virtualizer is ready
   useEffect(() => {
-    if (numPages && pageHeights.size > 0 && initialPage > 1 && initialPage <= numPages) {
-      // Set navigating flag to prevent tracking effect from interfering
-      isNavigating.current = true
-      setCurrentPage(initialPage)
+    if (!hasScrolledToInitialPage.current && numPages && pageHeights.size > 0) {
+      // If we're already on page 1, just mark as scrolled and enable tracking
+      if (initialPage === 1) {
+        hasScrolledToInitialPage.current = true
+        return
+      }
 
-      // Wait for virtualizer to measure and layout items
-      const timeoutId = setTimeout(() => {
-        virtualizer.scrollToIndex(initialPage - 1, {
-          align: 'start',
-          behavior: 'auto',
+      // For other pages, calculate offset and scroll
+      if (initialPage <= numPages && containerRef.current) {
+        // Calculate offset to scroll to
+        let offset = 0
+        for (let i = 1; i < initialPage; i++) {
+          const height = pageHeights.get(i) || 800
+          offset += height * scale + 16 // 16px gap
+        }
+
+        // Set state and flags
+        hasScrolledToInitialPage.current = true
+        isNavigating.current = true
+        setCurrentPage(initialPage)
+
+        // Scroll directly using the container
+        requestAnimationFrame(() => {
+          if (containerRef.current) {
+            containerRef.current.scrollTop = offset
+
+            // Allow tracking to resume after scroll settles
+            setTimeout(() => {
+              isNavigating.current = false
+            }, 1000)
+          }
         })
-
-        // Keep navigating flag set until scroll settles
-        setTimeout(() => {
-          isNavigating.current = false
-        }, 500)
-      }, 100)
-
-      return () => clearTimeout(timeoutId)
+      }
     }
-  }, [numPages, pageHeights.size, initialPage, virtualizer])
+  }, [numPages, pageHeights.size, initialPage, scale])
 
   function onDocumentLoadError(error: Error) {
     console.error('Error loading PDF:', error)
@@ -178,7 +193,8 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
 
   // Track visible page for URL updates
   useEffect(() => {
-    if (!virtualizer || isNavigating.current) return
+    // Don't track if navigating or if we haven't completed initial scroll yet
+    if (!virtualizer || isNavigating.current || !hasScrolledToInitialPage.current) return
 
     const items = virtualizer.getVirtualItems()
     if (items.length === 0) return
