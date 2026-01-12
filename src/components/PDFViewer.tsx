@@ -112,12 +112,21 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
   // Scroll to initial page once virtualizer is ready
   useEffect(() => {
     if (numPages && pageHeights.size > 0 && initialPage > 1 && initialPage <= numPages) {
+      // Set navigating flag to prevent tracking effect from interfering
+      isNavigating.current = true
+      setCurrentPage(initialPage)
+
       // Wait for virtualizer to measure and layout items
       const timeoutId = setTimeout(() => {
         virtualizer.scrollToIndex(initialPage - 1, {
           align: 'start',
           behavior: 'auto',
         })
+
+        // Keep navigating flag set until scroll settles
+        setTimeout(() => {
+          isNavigating.current = false
+        }, 500)
       }, 100)
 
       return () => clearTimeout(timeoutId)
