@@ -62,7 +62,18 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
   // Navigation functions
   const goToPage = useCallback((pageNum: number) => {
     if (numPages && pageNum >= 1 && pageNum <= numPages) {
+      // Immediately load pages around the target
+      const buffer = 2
+      const pagesToLoad = new Set<number>()
+      for (let i = Math.max(1, pageNum - buffer); i <= Math.min(numPages, pageNum + buffer); i++) {
+        pagesToLoad.add(i)
+      }
+      setVisiblePages(pagesToLoad)
+      setCurrentPage(pageNum)
+
+      // Scroll to page
       scrollToPage(pageNum)
+
       // Update URL
       router.push(`/${pdfName}/${pageNum}`, { scroll: false })
     }
@@ -225,29 +236,32 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
         if (isScrollingToPage.current) return
 
         entries.forEach((entry) => {
-          if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
+          if (entry.isIntersecting) {
             const pageNum = parseInt(entry.target.getAttribute('data-page-number') || '1', 10)
-            if (pageNum !== currentPage) {
-              setCurrentPage(pageNum)
 
+            // Load pages in buffer range around ANY visible page
+            const buffer = 3
+            setVisiblePages(prev => {
+              const newPages = new Set(prev)
+              for (let i = Math.max(1, pageNum - buffer); i <= Math.min(numPages, pageNum + buffer); i++) {
+                newPages.add(i)
+              }
+              return newPages
+            })
+
+            // Update current page if this is the main visible page
+            if (entry.intersectionRatio > 0.5 && pageNum !== currentPage) {
+              setCurrentPage(pageNum)
               // Update URL without scrolling
               router.replace(`/${pdfName}/${pageNum}`, { scroll: false })
-
-              // Load pages in buffer range
-              const buffer = 2
-              const pagesToLoad = new Set<number>()
-              for (let i = Math.max(1, pageNum - buffer); i <= Math.min(numPages, pageNum + buffer); i++) {
-                pagesToLoad.add(i)
-              }
-              setVisiblePages(pagesToLoad)
             }
           }
         })
       },
       {
         root: null,
-        rootMargin: '-20% 0px -20% 0px',
-        threshold: [0, 0.5, 1],
+        rootMargin: '100px 0px 100px 0px', // Load pages before they're visible
+        threshold: [0, 0.25, 0.5, 0.75, 1],
       }
     )
 
