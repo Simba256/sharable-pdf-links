@@ -45,6 +45,7 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
   const pdfDocumentRef = useRef<any>(null)
   const pageRefs = useRef<{ [key: number]: HTMLDivElement | null }>({})
   const isScrollingToPage = useRef(false)
+  const isInitialLoad = useRef(true)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Scroll to specific page
@@ -55,7 +56,8 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
       pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
       setTimeout(() => {
         isScrollingToPage.current = false
-      }, 1000)
+        isInitialLoad.current = false
+      }, 1500) // Increased timeout to prevent premature observer triggers
     }
   }, [])
 
@@ -131,9 +133,9 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
     const estimatedPageHeight = pageWidth * 1.4 // Typical A4 ratio
     setPageHeight(estimatedPageHeight)
 
-    // Load initial pages
+    // Load initial pages with larger buffer
     const pagesToLoad = new Set<number>()
-    const buffer = 2
+    const buffer = 3
     for (let i = Math.max(1, initialPage - buffer); i <= Math.min(pdf.numPages, initialPage + buffer); i++) {
       pagesToLoad.add(i)
     }
@@ -141,8 +143,14 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
 
     // Scroll to initial page from URL
     if (initialPage > 1 && initialPage <= pdf.numPages) {
+      // Use a shorter delay to scroll faster
       setTimeout(() => {
         scrollToPage(initialPage)
+      }, 300)
+    } else {
+      // If page 1, mark initial load as complete
+      setTimeout(() => {
+        isInitialLoad.current = false
       }, 500)
     }
   }, [initialPage, scrollToPage, pageWidth])
@@ -233,7 +241,8 @@ export default function PDFViewer({ pdfName, initialPage }: PDFViewerProps) {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (isScrollingToPage.current) return
+        // Don't update during initial load or programmatic scrolling
+        if (isScrollingToPage.current || isInitialLoad.current) return
 
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
